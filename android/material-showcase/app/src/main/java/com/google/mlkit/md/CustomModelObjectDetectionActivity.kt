@@ -37,11 +37,12 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.common.base.Objects
 import com.google.common.collect.ImmutableList
+import com.google.mlkit.md.camera.CameraSource
+import com.google.mlkit.md.camera.CameraSourcePreview
 import com.google.mlkit.md.camera.GraphicOverlay
 import com.google.mlkit.md.camera.WorkflowModel
 import com.google.mlkit.md.camera.WorkflowModel.WorkflowState
-import com.google.mlkit.md.camera.CameraSource
-import com.google.mlkit.md.camera.CameraSourcePreview
+import com.google.mlkit.md.classification.CategoryDetectorFactory
 import com.google.mlkit.md.objectdetection.MultiObjectProcessor
 import com.google.mlkit.md.objectdetection.ProminentObjectProcessor
 import com.google.mlkit.md.productsearch.BottomSheetScrimView
@@ -113,16 +114,18 @@ class CustomModelObjectDetectionActivity : AppCompatActivity(), OnClickListener 
         settingsButton?.isEnabled = true
         bottomSheetBehavior?.state = BottomSheetBehavior.STATE_HIDDEN
         currentWorkflowState = WorkflowState.NOT_STARTED
+
+        val categoryDetector = CategoryDetectorFactory.get(applicationContext)
         cameraSource?.setFrameProcessor(
             if (PreferenceUtils.isMultipleObjectsMode(this)) {
                 MultiObjectProcessor(
                     graphicOverlay!!, workflowModel!!,
-                    CUSTOM_MODEL_PATH
+                    categoryDetector, CUSTOM_MODEL_PATH
                 )
             } else {
                 ProminentObjectProcessor(
                     graphicOverlay!!, workflowModel!!,
-                    CUSTOM_MODEL_PATH
+                    categoryDetector, CUSTOM_MODEL_PATH,
                 )
             }
         )

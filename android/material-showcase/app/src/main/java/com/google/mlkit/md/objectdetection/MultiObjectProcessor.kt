@@ -21,32 +21,39 @@ import android.util.Log
 import android.util.SparseArray
 import androidx.annotation.MainThread
 import androidx.core.util.forEach
-import androidx.core.util.set
 import com.google.android.gms.tasks.Task
-import com.google.mlkit.md.camera.CameraReticleAnimator
-import com.google.mlkit.md.camera.GraphicOverlay
-import com.google.mlkit.md.R
-import com.google.mlkit.md.camera.WorkflowModel
-import com.google.mlkit.md.camera.FrameProcessorBase
-import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.common.model.LocalModel
 import com.google.mlkit.md.InputInfo
+import com.google.mlkit.md.R
+import com.google.mlkit.md.camera.CameraReticleAnimator
+import com.google.mlkit.md.camera.FrameProcessorBase
+import com.google.mlkit.md.camera.GraphicOverlay
+import com.google.mlkit.md.camera.WorkflowModel
+import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import com.google.mlkit.vision.objects.DetectedObject
 import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.ObjectDetector
 import com.google.mlkit.vision.objects.ObjectDetectorOptionsBase
+import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.io.IOException
-import java.util.ArrayList
 import kotlin.math.hypot
+
+// Tracking id -> Category
+private val detectedCategoryMap = mutableMapOf<Int, String>()
 
 /** A processor to run object detector in multi-objects mode.  */
 class MultiObjectProcessor(
     graphicOverlay: GraphicOverlay,
     private val workflowModel: WorkflowModel,
-    private val customModelPath: String? = null
+    private val categoryDetector: CategoryDetector,
+    private val customModelPath: String? = null,
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + Job())
 ) :
     FrameProcessorBase<List<DetectedObject>>() {
     private val confirmationController: ObjectConfirmationController = ObjectConfirmationController(graphicOverlay)
@@ -153,6 +160,15 @@ class MultiObjectProcessor(
                         graphicOverlay, DetectedObjectInfo(result, i, inputInfo), objectDotAnimator
                     )
                 )
+
+
+                val objectBitmap = getObjectBitmap(inputInfo.getBitmap(), objects[0])!!
+                coroutineScope.launch {
+                    val detectedCategory = categoryDetector.getCategory(trackingId, objectBitmap)
+                    if (detectedCategory != null && detectedCategory != "LOADING") {
+                        graphicOverlay.add(ObjectLabelGraphic(graphicOverlay, objects[0], detectedCategory))
+                    }
+                }
             }
         }
 

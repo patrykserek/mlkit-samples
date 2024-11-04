@@ -16,19 +16,25 @@
 
 package com.google.mlkit.md.objectdetection
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.YuvImage
+import android.os.Environment
 import android.util.Log
 import androidx.annotation.MainThread
 import com.google.android.gms.tasks.Task
-import com.google.mlkit.md.camera.CameraReticleAnimator
-import com.google.mlkit.md.camera.GraphicOverlay
-import com.google.mlkit.md.R
-import com.google.mlkit.md.camera.WorkflowModel
-import com.google.mlkit.md.camera.WorkflowModel.WorkflowState
-import com.google.mlkit.md.camera.FrameProcessorBase
-import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.common.model.LocalModel
 import com.google.mlkit.md.InputInfo
+import com.google.mlkit.md.R
+import com.google.mlkit.md.camera.CameraReticleAnimator
+import com.google.mlkit.md.camera.FrameProcessorBase
+import com.google.mlkit.md.camera.GraphicOverlay
+import com.google.mlkit.md.camera.WorkflowModel
+import com.google.mlkit.md.camera.WorkflowModel.WorkflowState
+import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.objects.DetectedObject
 import com.google.mlkit.vision.objects.ObjectDetection
@@ -36,14 +42,24 @@ import com.google.mlkit.vision.objects.ObjectDetector
 import com.google.mlkit.vision.objects.ObjectDetectorOptionsBase
 import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
-import java.util.ArrayList
+import java.nio.ByteBuffer
 
 /** A processor to run object detector in prominent object only mode.  */
 class ProminentObjectProcessor(
-  graphicOverlay: GraphicOverlay,
-  private val workflowModel: WorkflowModel,
-  private val customModelPath: String? = null) :
+    graphicOverlay: GraphicOverlay,
+    private val workflowModel: WorkflowModel,
+    private val categoryDetector: CategoryDetector,
+    private val customModelPath: String? = null,
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + Job())
+) :
     FrameProcessorBase<List<DetectedObject>>() {
 
     private val detector: ObjectDetector
@@ -145,6 +161,15 @@ class ProminentObjectProcessor(
                     // Shows a loading indicator to visualize the confirming progress if in auto search mode.
                     graphicOverlay.add(ObjectConfirmationGraphic(graphicOverlay, confirmationController))
                 }
+
+                val objectBitmap = getObjectBitmap(inputInfo.getBitmap(), objects[0])!!
+                coroutineScope.launch {
+                    val trackingId = objects[0].trackingId ?: return@launch
+                    val detectedCategory = categoryDetector.getCategory(trackingId, objectBitmap)
+                    if (detectedCategory != null && detectedCategory != "LOADING") {
+                        graphicOverlay.add(ObjectLabelGraphic(graphicOverlay, objects[0], detectedCategory))
+                    }
+                }
             } else {
                 // Object is detected but the confirmation reticle is moved off the object box, which
                 // indicates user is not trying to pick this object.
@@ -158,6 +183,22 @@ class ProminentObjectProcessor(
             }
         }
         graphicOverlay.invalidate()
+    }
+
+    fun saveBitmapToStorage(bitmap: Bitmap, filename: String = "output_image.jpg"): String? {
+        val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val file = File(path, filename)
+
+        try {
+            // Compress the bitmap and save it as a JPEG or PNG file
+            FileOutputStream(file).use { outputStream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            }
+            return file.absolutePath // Return the file path for reference
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+        return null
     }
 
     private fun objectBoxOverlapsConfirmationReticle(
@@ -183,4 +224,32 @@ class ProminentObjectProcessor(
     companion object {
         private const val TAG = "ProminentObjProcessor"
     }
+
+    fun convertByteBufferToBitmap(data: ByteBuffer, width: Int, height: Int): Bitmap? {
+        // Convert ByteBuffer to byte array
+        val bytes = ByteArray(data.remaining())
+        data.get(bytes)
+
+        // Convert YUV to JPEG, then to Bitmap
+        val yuvImage = YuvImage(bytes, ImageFormat.NV21, width, height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
+        val byteArray = out.toByteArray()
+
+        return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+    }
+}
+
+fun getObjectBitmap(originalBitmap: Bitmap, detectedObject: DetectedObject): Bitmap? {
+    // Get the bounding box of the detected object
+    val boundingBox: Rect = detectedObject.boundingBox
+
+    // Crop the bitmap based on the bounding box
+    return Bitmap.createBitmap(
+        originalBitmap,
+        boundingBox.left,
+        boundingBox.top,
+        boundingBox.width(),
+        boundingBox.height()
+    )
 }
