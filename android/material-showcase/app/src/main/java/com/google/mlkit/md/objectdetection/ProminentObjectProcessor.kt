@@ -58,7 +58,7 @@ class ProminentObjectProcessor(
     private val workflowModel: WorkflowModel,
     private val categoryDetector: CategoryDetector,
     private val customModelPath: String? = null,
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + Job())
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO + Job())
 ) :
     FrameProcessorBase<List<DetectedObject>>() {
 
