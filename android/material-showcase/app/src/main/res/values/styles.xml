@@ -2,4 +2,8 @@
 <resources>
   <style name="AppTheme" parent="Theme.MaterialComponents.NoActionBar">
   </style>
+  <style name="RoundedCornerImage" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSize">16dp</item>
+  </style>
 </resources>

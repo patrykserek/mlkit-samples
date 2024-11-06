@@ -35,6 +35,7 @@ class WorkflowModel(application: Application) : AndroidViewModel(application) {
     val objectToSearch = MutableLiveData<DetectedObjectInfo>()
     val searchedObject = MutableLiveData<SearchedObject>()
     val detectedBarcode = MutableLiveData<Barcode>()
+    val confirmedReadyObject = MutableLiveData<DetectedObjectInfo>()
 
     private val objectIdsToSearch = HashSet<Int>()
 
@@ -75,6 +76,7 @@ class WorkflowModel(application: Application) : AndroidViewModel(application) {
         val isConfirmed = progress.compareTo(1f) == 0
         if (isConfirmed) {
             confirmedObject = confirmingObject
+            confirmedReadyObject.value = confirmingObject
             if (PreferenceUtils.isAutoSearchEnabled(context)) {
                 setWorkflowState(WorkflowState.SEARCHING)
                 triggerSearch(confirmingObject)

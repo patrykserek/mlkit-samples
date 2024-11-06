@@ -18,6 +18,8 @@ package com.google.mlkit.md
 
 import android.animation.AnimatorInflater
 import android.animation.AnimatorSet
+import android.content.ClipData
+import android.content.ClipDescription
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -25,10 +27,13 @@ import android.hardware.Camera
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.view.View.DRAG_FLAG_OPAQUE
 import android.view.View.OnClickListener
+import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.DragStartHelper
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -36,13 +41,14 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.chip.Chip
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.imageview.ShapeableImageView
 import com.google.common.base.Objects
 import com.google.common.collect.ImmutableList
+import com.google.mlkit.md.camera.CameraSource
+import com.google.mlkit.md.camera.CameraSourcePreview
 import com.google.mlkit.md.camera.GraphicOverlay
 import com.google.mlkit.md.camera.WorkflowModel
 import com.google.mlkit.md.camera.WorkflowModel.WorkflowState
-import com.google.mlkit.md.camera.CameraSource
-import com.google.mlkit.md.camera.CameraSourcePreview
 import com.google.mlkit.md.objectdetection.MultiObjectProcessor
 import com.google.mlkit.md.objectdetection.ProminentObjectProcessor
 import com.google.mlkit.md.productsearch.BottomSheetScrimView
@@ -76,6 +82,8 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
     private var objectThumbnailForBottomSheet: Bitmap? = null
     private var slidingSheetUpFromHiddenState: Boolean = false
 
+    private var objectImage: ShapeableImageView? = null//TODO
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -83,6 +91,9 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
 
         setContentView(R.layout.activity_live_object)
         preview = findViewById(R.id.camera_preview)
+
+        objectImage = findViewById(R.id.bitmap_image)//TODO
+
         graphicOverlay = findViewById<GraphicOverlay>(R.id.camera_preview_graphic_overlay).apply {
             setOnClickListener(this@LiveObjectDetectionActivity)
             cameraSource = CameraSource(this)
@@ -109,6 +120,21 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
             setOnClickListener(this@LiveObjectDetectionActivity)
         }
         setUpWorkflowModel()
+        DragStartHelper(objectImage!!)
+        { view: View, _: DragStartHelper ->
+            val item = ClipData.Item(view.tag as? CharSequence)
+            val dragData = ClipData(
+                view.tag as? CharSequence,
+                arrayOf(ClipDescription.MIMETYPE_TEXT_PLAIN),
+                item
+            )
+            view.startDragAndDrop(
+                dragData,
+                View.DragShadowBuilder(objectImage),
+                null,
+                DRAG_FLAG_OPAQUE
+            )
+        }.attach()
     }
 
     override fun onResume() {
@@ -271,6 +297,23 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
                 } else {
                     stateChangeInManualSearchMode(workflowState)
                 }
+            })
+
+            confirmedReadyObject.observe(this@LiveObjectDetectionActivity, Observer { confirmedObject ->
+
+                val coords = graphicOverlay?.translateRect(confirmedObject.boundingBox)
+
+                val layoutParams = objectImage?.layoutParams as? FrameLayout.LayoutParams
+                confirmedObject.objectIndex
+                layoutParams?.apply {
+                    width = coords!!.width().toInt()
+                    height = coords.height().toInt()
+                }
+
+                objectImage?.x = coords!!.left
+                objectImage?.y = coords.top
+                val bitmap = confirmedObject.getBitmap()
+                objectImage?.setImageBitmap(bitmap)
             })
 
             // Observes changes on the object to search, if happens, fire product search request.
