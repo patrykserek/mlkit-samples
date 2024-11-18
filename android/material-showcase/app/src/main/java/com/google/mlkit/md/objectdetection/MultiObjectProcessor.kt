@@ -74,6 +74,7 @@ class MultiObjectProcessor(
         } else {
             val optionsBuilder = ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+                .enableMultipleObjects()
             if (isClassificationEnabled) {
                 optionsBuilder.enableClassification()
             }
