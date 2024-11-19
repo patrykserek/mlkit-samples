@@ -96,7 +96,7 @@ class MultiObjectProcessor(
         graphicOverlay.clear()
 
         objects.forEach {
-            graphicOverlay.add(ObjectRectGraphic(graphicOverlay, it))
+            graphicOverlay.add(ObjectGraphic(graphicOverlay, it))
         }
 
         graphicOverlay.invalidate()
