@@ -16,48 +16,33 @@
 
 package com.google.mlkit.md.objectdetection
 
-import android.graphics.PointF
 import android.util.Log
-import android.util.SparseArray
 import androidx.annotation.MainThread
-import androidx.core.util.forEach
-import androidx.core.util.set
 import com.google.android.gms.tasks.Task
-import com.google.mlkit.md.camera.CameraReticleAnimator
-import com.google.mlkit.md.camera.GraphicOverlay
-import com.google.mlkit.md.R
-import com.google.mlkit.md.camera.WorkflowModel
-import com.google.mlkit.md.camera.FrameProcessorBase
-import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.common.model.LocalModel
 import com.google.mlkit.md.InputInfo
+import com.google.mlkit.md.camera.FrameProcessorBase
+import com.google.mlkit.md.camera.GraphicOverlay
+import com.google.mlkit.md.camera.WorkflowModel
+import com.google.mlkit.md.overlaps
+import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import com.google.mlkit.vision.objects.DetectedObject
 import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.ObjectDetector
 import com.google.mlkit.vision.objects.ObjectDetectorOptionsBase
+import com.google.mlkit.vision.objects.custom.CustomObjectDetectorOptions
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import java.io.IOException
-import java.util.ArrayList
-import kotlin.math.hypot
 
 /** A processor to run object detector in multi-objects mode.  */
 class MultiObjectProcessor(
     graphicOverlay: GraphicOverlay,
     private val workflowModel: WorkflowModel,
     private val customModelPath: String? = null
-) :
-    FrameProcessorBase<List<DetectedObject>>() {
-    private val confirmationController: ObjectConfirmationController = ObjectConfirmationController(graphicOverlay)
-    private val cameraReticleAnimator: CameraReticleAnimator = CameraReticleAnimator(graphicOverlay)
-    private val objectSelectionDistanceThreshold: Int = graphicOverlay
-        .resources
-        .getDimensionPixelOffset(R.dimen.object_selection_distance_threshold)
-    private val detector: ObjectDetector
+) : FrameProcessorBase<List<DetectedObject>>() {
 
-    // Each new tracked object plays appearing animation exactly once.
-    private val objectDotAnimatorArray = SparseArray<ObjectDotAnimator>()
+    private val detector: ObjectDetector
 
     init {
         val options: ObjectDetectorOptionsBase
@@ -103,106 +88,28 @@ class MultiObjectProcessor(
         results: List<DetectedObject>,
         graphicOverlay: GraphicOverlay
     ) {
-        var objects = results
+        val objects = filterNonOverlappingObjects(results)
         if (!workflowModel.isCameraLive) {
             return
         }
 
-        if (customModelPath != null) {
-            objects = results.filter { result -> DetectedObjectInfo.hasValidLabels(result) }
-        } else if (PreferenceUtils.isClassificationEnabled(graphicOverlay.context)) {
-            val qualifiedObjects = ArrayList<DetectedObject>()
-            for (result in objects) {
-                qualifiedObjects.add(result)
-            }
-            objects = qualifiedObjects
-        }
-
-        removeAnimatorsFromUntrackedObjects(objects)
-
         graphicOverlay.clear()
 
-        var selectedObject: DetectedObjectInfo? = null
-        for (i in objects.indices) {
-            val result = objects[i]
-            if (selectedObject == null && shouldSelectObject(graphicOverlay, result)) {
-                selectedObject = DetectedObjectInfo(result, i, inputInfo)
-                // Starts the object confirmation once an object is regarded as selected.
-                confirmationController.confirming(result.trackingId)
-                graphicOverlay.add(ObjectConfirmationGraphic(graphicOverlay, confirmationController))
-
-                graphicOverlay.add(
-                    ObjectGraphicInMultiMode(
-                        graphicOverlay, selectedObject, confirmationController
-                    )
-                )
-            } else {
-                if (confirmationController.isConfirmed) {
-                    // Don't render other objects when an object is in confirmed state.
-                    continue
-                }
-
-                val trackingId = result.trackingId ?: return
-                val objectDotAnimator = objectDotAnimatorArray.get(trackingId) ?: let {
-                    ObjectDotAnimator(graphicOverlay).apply {
-                        start()
-                        objectDotAnimatorArray[trackingId] = this
-                    }
-                }
-                graphicOverlay.add(
-                    ObjectDotGraphic(
-                        graphicOverlay, DetectedObjectInfo(result, i, inputInfo), objectDotAnimator
-                    )
-                )
-            }
-        }
-
-        if (selectedObject == null) {
-            confirmationController.reset()
-            graphicOverlay.add(ObjectReticleGraphic(graphicOverlay, cameraReticleAnimator))
-            cameraReticleAnimator.start()
-        } else {
-            cameraReticleAnimator.cancel()
+        objects.forEach {
+            graphicOverlay.add(ObjectRectGraphic(graphicOverlay, it))
         }
 
         graphicOverlay.invalidate()
-
-        if (selectedObject != null) {
-            workflowModel.confirmingObject(selectedObject, confirmationController.progress)
-        } else {
-            workflowModel.setWorkflowState(
-                if (objects.isEmpty()) {
-                    WorkflowModel.WorkflowState.DETECTING
-                } else {
-                    WorkflowModel.WorkflowState.DETECTED
-                }
-            )
-        }
     }
 
-    private fun removeAnimatorsFromUntrackedObjects(detectedObjects: List<DetectedObject>) {
-        val trackingIds = detectedObjects.mapNotNull { it.trackingId }
-        // Stop and remove animators from the objects that have lost tracking.
-        val removedTrackingIds = ArrayList<Int>()
-        objectDotAnimatorArray.forEach { key, value ->
-            if (!trackingIds.contains(key)) {
-                value.cancel()
-                removedTrackingIds.add(key)
+    private fun filterNonOverlappingObjects(detectedObjects: List<DetectedObject>): List<DetectedObject> {
+        val result = mutableListOf<DetectedObject>()
+        for (detectedObject in detectedObjects) {
+            if (result.none { it.boundingBox.overlaps(detectedObject.boundingBox) }) {
+                result.add(detectedObject)
             }
         }
-        removedTrackingIds.forEach {
-            objectDotAnimatorArray.remove(it)
-        }
-    }
-
-    private fun shouldSelectObject(graphicOverlay: GraphicOverlay, visionObject: DetectedObject): Boolean {
-        // Considers an object as selected when the camera reticle touches the object dot.
-        val box = graphicOverlay.translateRect(visionObject.boundingBox)
-        val objectCenter = PointF((box.left + box.right) / 2f, (box.top + box.bottom) / 2f)
-        val reticleCenter = PointF(graphicOverlay.width / 2f, graphicOverlay.height / 2f)
-        val distance =
-            hypot((objectCenter.x - reticleCenter.x).toDouble(), (objectCenter.y - reticleCenter.y).toDouble())
-        return distance < objectSelectionDistanceThreshold
+        return result
     }
 
     override fun onFailure(e: Exception) {
