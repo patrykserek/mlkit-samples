@@ -21,6 +21,7 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import com.google.mlkit.md.Utils
 import java.util.ArrayList
@@ -92,6 +93,11 @@ class GraphicOverlay(context: Context, attrs: AttributeSet) : View(context, attr
 
     fun translateX(x: Float): Float = x * widthScaleFactor
     fun translateY(y: Float): Float = y * heightScaleFactor
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Allow touch events to propagate to parent views (like overlayContainer)
+        return false
+    }
 
     /**
      * Adjusts the `rect`'s coordinate from the preview's coordinate system to the view

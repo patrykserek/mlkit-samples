@@ -19,6 +19,8 @@ package com.google.mlkit.md.objectdetection
 import android.graphics.PointF
 import android.util.Log
 import android.util.SparseArray
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.annotation.MainThread
 import androidx.core.util.forEach
 import androidx.core.util.set
@@ -167,17 +169,21 @@ class MultiObjectProcessor(
 
         graphicOverlay.invalidate()
 
-        if (selectedObject != null) {
-            workflowModel.confirmingObject(selectedObject, confirmationController.progress)
-        } else {
-            workflowModel.setWorkflowState(
-                if (objects.isEmpty()) {
-                    WorkflowModel.WorkflowState.DETECTING
-                } else {
-                    WorkflowModel.WorkflowState.DETECTED
-                }
-            )
+        when {
+            selectedObject != null -> workflowModel.confirmingObject(selectedObject, confirmationController.progress)
+            objects.isEmpty() -> workflowModel.setWorkflowState(WorkflowModel.WorkflowState.DETECTING)
+            else -> {
+                workflowModel.setWorkflowState(WorkflowModel.WorkflowState.DETECTED)
+                workflowModel.setDetectedObjects(objects, inputInfo)
+            }
         }
+        enableOverlayInteraction(graphicOverlay)
+    }
+
+    private fun enableOverlayInteraction(graphicOverlay: GraphicOverlay) {
+        val overlayContainer = (graphicOverlay.parent as? ViewGroup)?.findViewById<FrameLayout>(R.id.detected_object_overlay)
+        overlayContainer?.isClickable = true
+        overlayContainer?.bringToFront()
     }
 
     private fun removeAnimatorsFromUntrackedObjects(detectedObjects: List<DetectedObject>) {

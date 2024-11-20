@@ -19,6 +19,7 @@ package com.google.mlkit.md.camera
 import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
@@ -73,6 +74,10 @@ class CameraSourcePreview(context: Context, attrs: AttributeSet) : FrameLayout(c
             }
             startRequested = false
         }
+    }
+
+    override fun onTouchEvent(event: MotionEvent?): Boolean {
+        return false
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {

@@ -56,4 +56,10 @@
         app:iconTint="@color/black"/>
   </FrameLayout>
 
+  <FrameLayout
+      android:id="@+id/detected_object_overlay"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:background="#330000FF"/>
+
 </merge>

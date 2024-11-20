@@ -21,11 +21,17 @@ import android.content.Context
 import androidx.annotation.MainThread
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.google.mlkit.md.InputInfo
 import com.google.mlkit.md.objectdetection.DetectedObjectInfo
 import com.google.mlkit.md.productsearch.Product
 import com.google.mlkit.md.productsearch.SearchedObject
 import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.objects.DetectedObject
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import java.util.HashSet
 
 /** View model for handling application workflow based on camera preview.  */
@@ -35,6 +41,9 @@ class WorkflowModel(application: Application) : AndroidViewModel(application) {
     val objectToSearch = MutableLiveData<DetectedObjectInfo>()
     val searchedObject = MutableLiveData<SearchedObject>()
     val detectedBarcode = MutableLiveData<Barcode>()
+
+    private val _detectedObjects = MutableSharedFlow<List<DetectedObjectInfo>>()
+    val detectedObjects: SharedFlow<List<DetectedObjectInfo>> = _detectedObjects
 
     private val objectIdsToSearch = HashSet<Int>()
 
@@ -125,5 +134,17 @@ class WorkflowModel(application: Application) : AndroidViewModel(application) {
         setWorkflowState(WorkflowState.SEARCHED)
 
         searchedObject.value = SearchedObject(context.resources, lConfirmedObject, products)
+    }
+
+    fun setDetectedObjects(objects: List<DetectedObject>, inputInfo: InputInfo) {
+        viewModelScope.launch {
+            val infoObjects = objects.mapIndexed { index, obj -> DetectedObjectInfo(obj, index, inputInfo) }
+            _detectedObjects.emit(infoObjects)
+        }
+    }
+
+    fun onDetectedObjectClicked(obj: DetectedObjectInfo) {
+        println("YOU CLICKED $obj")
+//        confirmingObject(obj, 1f)
     }
 }

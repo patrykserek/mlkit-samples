@@ -24,13 +24,17 @@ import android.graphics.Color
 import android.hardware.Camera
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.View.OnClickListener
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -50,6 +54,8 @@ import com.google.mlkit.md.productsearch.ProductAdapter
 import com.google.mlkit.md.productsearch.SearchEngine
 import com.google.mlkit.md.settings.PreferenceUtils
 import com.google.mlkit.md.settings.SettingsActivity
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import java.io.IOException
 
 /** Demonstrates the object detection and visual search workflow using camera preview.  */
@@ -76,12 +82,22 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
     private var objectThumbnailForBottomSheet: Bitmap? = null
     private var slidingSheetUpFromHiddenState: Boolean = false
 
+    private var overlayContainer: FrameLayout? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         searchEngine = SearchEngine(applicationContext)
 
         setContentView(R.layout.activity_live_object)
+        overlayContainer = findViewById(R.id.detected_object_overlay)
+        overlayContainer?.apply {
+            isClickable = true
+            isFocusable = true
+            bringToFront()
+            invalidate()
+        }
+
         preview = findViewById(R.id.camera_preview)
         graphicOverlay = findViewById<GraphicOverlay>(R.id.camera_preview_graphic_overlay).apply {
             setOnClickListener(this@LiveObjectDetectionActivity)
@@ -109,6 +125,16 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
             setOnClickListener(this@LiveObjectDetectionActivity)
         }
         setUpWorkflowModel()
+
+        overlayContainer?.setOnTouchListener { _, event ->
+            Log.d("OverlayContainer", "Touch event: $event")
+            false
+        }
+
+        graphicOverlay?.setOnTouchListener { _, event ->
+            Log.d("GraphicOverlay", "Touch event: $event")
+            false
+        }
     }
 
     override fun onResume() {
@@ -272,6 +298,30 @@ class LiveObjectDetectionActivity : AppCompatActivity(), OnClickListener {
                     stateChangeInManualSearchMode(workflowState)
                 }
             })
+
+            detectedObjects.onEach { objects ->
+                overlayContainer?.removeAllViews()
+                objects.forEach { obj ->
+                    val coords = graphicOverlay?.translateRect(obj.boundingBox)
+                    val objectView = View(this@LiveObjectDetectionActivity).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            coords!!.width().toInt(),
+                            coords.height().toInt()
+                        ).apply {
+                            leftMargin = coords.left.toInt()
+                            topMargin = coords.top.toInt()
+                        }
+                        setBackgroundColor(Color.parseColor("#55FFFFFF")) // Semi-transparent for highlighting
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            Log.d("CLICKY", "object clicked!")
+                            onDetectedObjectClicked(obj)
+                        }
+                    }
+                    overlayContainer?.addView(objectView)
+                }
+            }.launchIn(lifecycleScope)
 
             // Observes changes on the object to search, if happens, fire product search request.
             objectToSearch.observe(this@LiveObjectDetectionActivity, Observer { detectObject ->
